@@ -27,8 +27,10 @@ const dynamoClient = new DynamoDBClient({
 
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
-// Tabla name
+// Tabla tasks
 const TASKS_TABLE = process.env.TASKS_TABLE || 'task_equipo_1';
+// Tabla boards
+const BOARDS_TABLE = process.env.BOARDS_TABLE || 'board_equipo_1';
 
 // Utility function para generar IDs únicos
 const generateId = () => {
@@ -42,14 +44,30 @@ const generateId = () => {
 // GET /tasks - Obtener todas las tareas
 app.get('/tasks', async (req, res) => {
   try {
-    const command = new ScanCommand({
-      TableName: TASKS_TABLE
-    });
+    const { boardId } = req.query; // Obtener boardId del query parameter
+
+    let command;
+    
+    if (boardId) {
+      // Si se especifica boardId, filtrar tareas de ese board
+      command = new ScanCommand({
+        TableName: TASKS_TABLE,
+        FilterExpression: 'boardId = :boardId',
+        ExpressionAttributeValues: {
+          ':boardId': boardId
+        }
+      });
+    } else {
+      // Si no se especifica boardId, obtener todas las tareas
+      command = new ScanCommand({
+        TableName: TASKS_TABLE
+      });
+    }
     
     const result = await docClient.send(command);
+    const tasks = result.Items || [];
     
     // Organizar tareas por status para el frontend
-    const tasks = result.Items || [];
     const organizedTasks = {
       todo: tasks.filter(task => task.status === 'todo'),
       'in-progress': tasks.filter(task => task.status === 'in-progress'),
@@ -60,7 +78,8 @@ app.get('/tasks', async (req, res) => {
       success: true,
       tasks: tasks,
       tasksByStatus: organizedTasks,
-      total: tasks.length
+      total: tasks.length,
+      boardId: boardId || null
     });
   } catch (error) {
     console.error('Error getting tasks:', error);
@@ -106,12 +125,34 @@ app.get('/tasks/:id', async (req, res) => {
 // POST /tasks - Crear una nueva tarea
 app.post('/tasks', async (req, res) => {
   try {
-    const { title, description, status } = req.body;
+    const { title, description, status, boardId } = req.body;
 
     if (!title) {
       return res.status(400).json({
         success: false,
         error: 'Title is required'
+      });
+    }
+
+    if (!boardId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Board ID is required'
+      });
+    }
+
+    // Validar que el board existe
+    const boardCommand = new GetCommand({
+      TableName: BOARDS_TABLE,
+      Key: { id: boardId }
+    });
+
+    const boardResult = await docClient.send(boardCommand);
+    
+    if (!boardResult.Item) {
+      return res.status(404).json({
+        success: false,
+        error: 'Board not found'
       });
     }
 
@@ -128,6 +169,7 @@ app.post('/tasks', async (req, res) => {
 
     const task = {
       id: generateId(),
+      boardId,  // ← Añadir boardId
       title,
       description: description || '',
       status: taskStatus,
@@ -302,6 +344,33 @@ app.get('/dashboard', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error fetching dashboard stats'
+    });
+  }
+});
+
+// ================================
+// BOARD ENDPOINTS
+// ================================
+
+app.get('/boards', async (req, res) => {
+  try {
+    const command = new ScanCommand({
+      TableName: BOARDS_TABLE
+    });
+    
+    const result = await docClient.send(command);
+    const boards = result.Items || [];
+
+    res.json({
+      success: true,
+      boards: boards,
+      total: boards.length
+    });
+  } catch (error) {
+    console.error('Error getting boards:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error fetching boards'
     });
   }
 });
