@@ -28,7 +28,7 @@ const dynamoClient = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 // Tabla name
-const TASKS_TABLE = process.env.TASKS_TABLE || 'TaskBoard-Tasks';
+const TASKS_TABLE = process.env.TASKS_TABLE || 'task_equipo_1';
 
 // Utility function para generar IDs únicos
 const generateId = () => {
